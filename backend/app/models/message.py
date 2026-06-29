@@ -1,8 +1,8 @@
-from sqlalchemy import Enum, ForeignKey, Text
+from sqlalchemy import ForeignKey, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, TimestampMixin
-from app.models.enums import MessageSender
+from app.models.enums import MessageSender, pg_enum
 
 
 class Message(Base, TimestampMixin):
@@ -13,7 +13,7 @@ class Message(Base, TimestampMixin):
         ForeignKey("conversations.id", ondelete="CASCADE"), index=True, nullable=False
     )
     sender: Mapped[MessageSender] = mapped_column(
-        Enum(MessageSender, name="message_sender"), nullable=False
+        pg_enum(MessageSender, "message_sender"), nullable=False
     )
     body: Mapped[str] = mapped_column(Text, nullable=False)
 

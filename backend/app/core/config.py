@@ -10,6 +10,13 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = "Lead Agent API"
     API_V1_PREFIX: str = "/api/v1"
 
+    # CORS — comma-separated origins allowed to call the API from a browser.
+    CORS_ORIGINS: str = "http://localhost:3000"
+
+    @property
+    def cors_origins_list(self) -> list[str]:
+        return [o.strip() for o in self.CORS_ORIGINS.split(",") if o.strip()]
+
     # Infra
     DATABASE_URL: str = "postgresql+asyncpg://leadagent:leadagent@postgres:5432/leadagent"
     REDIS_URL: str = "redis://redis:6379/0"

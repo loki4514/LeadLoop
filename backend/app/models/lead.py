@@ -1,10 +1,10 @@
 from datetime import datetime
 
-from sqlalchemy import Enum, ForeignKey, Integer, String, func
+from sqlalchemy import ForeignKey, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, TimestampMixin
-from app.models.enums import LeadStatus, LeadTier
+from app.models.enums import LeadStatus, LeadTier, pg_enum
 
 
 class Lead(Base, TimestampMixin):
@@ -26,9 +26,9 @@ class Lead(Base, TimestampMixin):
 
     # Scoring
     score: Mapped[int | None] = mapped_column(Integer)
-    tier: Mapped[LeadTier | None] = mapped_column(Enum(LeadTier, name="lead_tier"))
+    tier: Mapped[LeadTier | None] = mapped_column(pg_enum(LeadTier, "lead_tier"))
     status: Mapped[LeadStatus] = mapped_column(
-        Enum(LeadStatus, name="lead_status"), default=LeadStatus.NEW, nullable=False
+        pg_enum(LeadStatus, "lead_status"), default=LeadStatus.NEW, nullable=False
     )
 
     ad_source: Mapped[str | None] = mapped_column(String(255))
