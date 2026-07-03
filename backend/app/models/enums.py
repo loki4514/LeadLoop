@@ -37,3 +37,10 @@ class MessageSender(str, enum.Enum):
     LEAD = "lead"
     AGENT = "agent"
     EMPLOYEE = "employee"
+
+
+class DocumentStatus(str, enum.Enum):
+    PENDING = "pending"        # uploaded, queued for ingestion
+    PROCESSING = "processing"  # worker is extracting/embedding
+    READY = "ready"            # chunks embedded and stored
+    FAILED = "failed"          # ingestion errored (see error field)
