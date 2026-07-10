@@ -12,6 +12,7 @@ from app.models.enums import (
 from app.models.followup import Followup
 from app.models.lead import Lead
 from app.models.message import Message
+from app.models.password_reset import PasswordResetToken
 from app.models.property import Property
 
 __all__ = [
@@ -23,6 +24,7 @@ __all__ = [
     "Followup",
     "Lead",
     "Message",
+    "PasswordResetToken",
     "Property",
     "DocumentStatus",
     "LeadStatus",

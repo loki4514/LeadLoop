@@ -20,5 +20,7 @@ markitdown[pdf,docx,xlsx,pptx]==0.1.6
 celery[redis]==5.4.0
 # pgvector SQLAlchemy column type
 pgvector==0.3.6
-# Embedding providers (pluggable; add others here as needed)
+# LLM / embedding providers (pluggable; add others here as needed)
 google-genai==1.21.0
+# OpenAI adapter for chat + embeddings (also works vs any OpenAI-compatible API)
+openai==1.59.6

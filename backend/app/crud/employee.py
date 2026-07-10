@@ -15,6 +15,12 @@ async def get_by_email(db: AsyncSession, email: str) -> Employee | None:
     return result.scalar_one_or_none()
 
 
+async def list_all(db: AsyncSession) -> list[Employee]:
+    """All employees, newest first."""
+    result = await db.execute(select(Employee).order_by(Employee.id.desc()))
+    return list(result.scalars().all())
+
+
 async def create(db: AsyncSession, data: EmployeeCreate) -> Employee:
     employee = Employee(
         name=data.name,

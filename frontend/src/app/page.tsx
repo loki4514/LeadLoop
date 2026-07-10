@@ -1,69 +1,48 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import Link from "next/link";
 
-import {
-  clearToken,
-  fetchMe,
-  getToken,
-  logout,
-  type Employee,
-} from "@/lib/api";
+import AppShell from "@/components/AppShell";
+
+const CARDS = [
+  {
+    href: "/chat",
+    title: "Chat",
+    body: "Ask questions and get answers grounded in your uploaded documents, with source citations.",
+  },
+  {
+    href: "/documents",
+    title: "Documents",
+    body: "Upload files to the knowledge base and track their ingestion status.",
+  },
+];
 
 export default function Home() {
-  const router = useRouter();
-  const [employee, setEmployee] = useState<Employee | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const token = getToken();
-    if (!token) {
-      router.replace("/login");
-      return;
-    }
-    fetchMe(token)
-      .then(setEmployee)
-      .catch(() => {
-        clearToken();
-        router.replace("/login");
-      })
-      .finally(() => setLoading(false));
-  }, [router]);
-
-  async function handleLogout() {
-    const token = getToken();
-    if (token) await logout(token);
-    clearToken();
-    router.replace("/login");
-  }
-
-  if (loading) {
-    return (
-      <main style={{ fontFamily: "sans-serif", padding: "2rem" }}>
-        <p>Loading…</p>
-      </main>
-    );
-  }
-
   return (
-    <main style={{ fontFamily: "sans-serif", padding: "2rem" }}>
-      <h1>Lead Agent</h1>
-      <p>AI Lead Qualification dashboard.</p>
-      {employee && (
-        <div style={{ marginTop: "1.5rem" }}>
-          <p>
-            Signed in as <strong>{employee.name}</strong> ({employee.email}) —
-            role: <strong>{employee.role}</strong>
+    <AppShell>
+      {(employee) => (
+        <div>
+          <h1 className="text-2xl font-semibold">
+            Welcome, {employee.name.split(" ")[0]}
+          </h1>
+          <p className="mt-1 text-neutral-500">
+            AI Lead Qualification — knowledge base &amp; chat.
           </p>
-          <button
-            onClick={handleLogout}
-            style={{ padding: "0.5rem 1rem", cursor: "pointer" }}
-          >
-            Log out
-          </button>
+
+          <div className="mt-6 grid gap-4 sm:grid-cols-2">
+            {CARDS.map((c) => (
+              <Link
+                key={c.href}
+                href={c.href}
+                className="rounded-xl border border-neutral-200 bg-white p-5 transition hover:border-neutral-400 hover:shadow-sm dark:border-neutral-800 dark:bg-neutral-900 dark:hover:border-neutral-600"
+              >
+                <h2 className="font-medium">{c.title}</h2>
+                <p className="mt-1 text-sm text-neutral-500">{c.body}</p>
+              </Link>
+            ))}
+          </div>
         </div>
       )}
-    </main>
+    </AppShell>
   );
 }

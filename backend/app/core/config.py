@@ -26,27 +26,51 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24  # 1 day
 
-    # Chat LLM — Gemini generative model used to answer over retrieved chunks.
-    # Shares the Gemini/google-genai SDK with embeddings. If LLM_API_KEY is left
-    # blank it falls back to EMBEDDING_API_KEY (same Google API key in practice).
+    # Password reset (email-based forgot-password)
+    RESET_TOKEN_EXPIRE_MINUTES: int = 30
+    # Base URL of the frontend, used to build the reset link in the email.
+    FRONTEND_BASE_URL: str = "http://localhost:3000"
+    # Resend (https://resend.com) transactional email. When RESEND_API_KEY is
+    # empty, the reset link is logged instead of emailed (dev-friendly).
+    RESEND_API_KEY: str = ""
+    EMAIL_FROM: str = "LeadLoop <onboarding@resend.dev>"
+
+    # Chat LLM — pluggable provider that answers over retrieved chunks.
+    #   LLM_PROVIDER=openai  -> openai SDK (default; needs OPENAI_API_KEY)
+    #   LLM_PROVIDER=gemini  -> google-genai (shares the embedding key)
+    LLM_PROVIDER: str = "openai"
+    # Sentinel default — the factory treats this value as "unset" and lets the
+    # selected provider pick its own default model (gpt-4o-mini / gemini-2.0-flash).
+    # Set LLM_MODEL to any real model id to pin it.
     LLM_MODEL: str = "gemini-2.0-flash"
     LLM_API_KEY: str = ""
     # Retrieval knobs for the RAG chat.
     CHAT_TOP_K: int = 5  # chunks retrieved per question
     CHAT_MIN_SCORE: float = 0.3  # drop chunks below this cosine similarity
 
+    # Follow-up automation — a qualified/assigned lead with no activity for
+    # STALL_HOURS gets an LLM-drafted follow-up email queued for human approval.
+    STALL_HOURS: int = 48
+    FOLLOWUP_CHECK_MINUTES: int = 60  # how often the beat task scans for stalls
+
+    # OpenAI (used when LLM_PROVIDER=openai and/or EMBEDDING_PROVIDER=openai).
+    # base_url is overridable so the same adapters work against any
+    # OpenAI-compatible server (Azure OpenAI, local vLLM/Ollama, ...).
+    OPENAI_API_KEY: str = ""
+    OPENAI_BASE_URL: str = ""
+
     @property
     def llm_api_key(self) -> str:
-        """The chat model's key, defaulting to the embedding key when unset."""
+        """The Gemini chat key, defaulting to the embedding key when unset."""
         return self.LLM_API_KEY or self.EMBEDDING_API_KEY
 
     # Embeddings — pluggable provider for the RAG pipeline.
     # Provider is selected at runtime; swapping it requires re-embedding stored
     # documents because the pgvector column is sized to one model's dimension.
-    EMBEDDING_PROVIDER: str = "gemini"
-    EMBEDDING_MODEL: str = "gemini-embedding-001"
-    EMBEDDING_API_KEY: str = ""
-    EMBEDDING_DIM: int = 768  # must match the active model; see migration
+    EMBEDDING_PROVIDER: str = "openai"
+    EMBEDDING_MODEL: str = "text-embedding-3-small"
+    EMBEDDING_API_KEY: str = ""  # unused for openai (uses OPENAI_API_KEY)
+    EMBEDDING_DIM: int = 1536  # must match the active model + migration 0004
 
     # Document ingestion
     UPLOAD_DIR: str = "/data/uploads"

@@ -1,3 +1,5 @@
+import hashlib
+import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -18,6 +20,22 @@ def hash_password(password: str) -> str:
 
 def verify_password(plain: str, hashed: str) -> bool:
     return pwd_context.verify(plain, hashed)
+
+
+# ---- Password reset tokens --------------------------------------------------
+#
+# A URL-safe random token is emailed to the user; only its SHA-256 hash is
+# persisted. Lookups hash the presented token and compare, so the raw token
+# never touches the database.
+
+def generate_reset_token() -> str:
+    """A high-entropy, URL-safe reset token."""
+    return secrets.token_urlsafe(32)
+
+
+def hash_reset_token(token: str) -> str:
+    """Stable SHA-256 hex digest used to store/look up a reset token."""
+    return hashlib.sha256(token.encode()).hexdigest()
 
 
 # ---- JWT --------------------------------------------------------------------

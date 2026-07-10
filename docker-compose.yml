@@ -35,11 +35,22 @@ services:
       DATABASE_URL: ${DATABASE_URL}
       REDIS_URL: ${REDIS_URL}
       JWT_SECRET: ${JWT_SECRET}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      EMAIL_FROM: ${EMAIL_FROM:-LeadLoop <onboarding@resend.dev>}
+      FRONTEND_BASE_URL: ${FRONTEND_BASE_URL:-http://localhost:3000}
       EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER}
       EMBEDDING_MODEL: ${EMBEDDING_MODEL}
+      EMBEDDING_DIM: ${EMBEDDING_DIM}
       EMBEDDING_API_KEY: ${EMBEDDING_API_KEY}
+      LLM_PROVIDER: ${LLM_PROVIDER}
       LLM_MODEL: ${LLM_MODEL}
       LLM_API_KEY: ${LLM_API_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      # NOTE: OPENAI_BASE_URL is intentionally NOT listed here. The openai SDK
+      # reads OPENAI_BASE_URL straight from the environment; injecting an empty
+      # value makes the SDK use "" as the endpoint and every request fails with
+      # UnsupportedProtocol. To use a custom endpoint, add it back with a real
+      # value (or export it on the host).
       UPLOAD_DIR: /data/uploads
     volumes:
       - uploads_data:/data/uploads
@@ -60,13 +71,27 @@ services:
     # Build from the backend context so the worker shares the same app package
     # (ingestion, embeddings, models, DB session) — single source of truth.
     build: ./backend
-    command: ["celery", "-A", "app.core.celery_app.celery_app", "worker", "--loglevel=info", "--concurrency=2"]
+    # -B embeds the beat scheduler (periodic stall-checker) in the same process.
+    command: ["celery", "-A", "app.core.celery_app.celery_app", "worker", "-B", "--loglevel=info", "--concurrency=2"]
     environment:
       DATABASE_URL: ${DATABASE_URL}
       REDIS_URL: ${REDIS_URL}
       EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER}
       EMBEDDING_MODEL: ${EMBEDDING_MODEL}
+      EMBEDDING_DIM: ${EMBEDDING_DIM}
       EMBEDDING_API_KEY: ${EMBEDDING_API_KEY}
+      LLM_PROVIDER: ${LLM_PROVIDER}
+      LLM_MODEL: ${LLM_MODEL}
+      LLM_API_KEY: ${LLM_API_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      # Follow-up automation (LLM drafts + employee notification emails)
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      EMAIL_FROM: ${EMAIL_FROM:-LeadLoop <onboarding@resend.dev>}
+      FRONTEND_BASE_URL: ${FRONTEND_BASE_URL:-http://localhost:3000}
+      STALL_HOURS: ${STALL_HOURS:-48}
+      FOLLOWUP_CHECK_MINUTES: ${FOLLOWUP_CHECK_MINUTES:-60}
+      # See the backend service: OPENAI_BASE_URL is intentionally omitted so an
+      # empty value can't override the openai SDK's default endpoint.
       UPLOAD_DIR: /data/uploads
     volumes:
       - uploads_data:/data/uploads

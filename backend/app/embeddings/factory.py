@@ -22,6 +22,20 @@ def _build_gemini() -> EmbeddingProvider:
 _BUILDERS["gemini"] = _build_gemini
 
 
+def _build_openai() -> EmbeddingProvider:
+    from app.embeddings.openai import OpenAIEmbeddingProvider
+
+    return OpenAIEmbeddingProvider(
+        api_key=settings.OPENAI_API_KEY,
+        model=settings.EMBEDDING_MODEL,
+        dim=settings.EMBEDDING_DIM,
+        base_url=settings.OPENAI_BASE_URL or None,
+    )
+
+
+_BUILDERS["openai"] = _build_openai
+
+
 @lru_cache
 def get_embedding_provider() -> EmbeddingProvider:
     """Return the active embedding provider, selected by EMBEDDING_PROVIDER."""
