@@ -292,6 +292,7 @@ export interface LeadSummary {
   status: LeadStatus;
   ad_source: string | null;
   assigned_employee: EmployeeBrief | null;
+  is_bot_active: boolean;
   last_activity_at: string;
   created_at: string;
 }
@@ -311,9 +312,43 @@ export interface LeadMessage {
   created_at: string;
 }
 
+export type AuditAction =
+  | "edited"
+  | "tier_changed"
+  | "reassigned"
+  | "deleted";
+
+export interface AuditLogRead {
+  id: number;
+  action: AuditAction;
+  field: string | null;
+  old_value: string | null;
+  new_value: string | null;
+  actor: EmployeeBrief | null;
+  created_at: string;
+}
+
 export interface LeadDetail extends LeadSummary {
   messages: LeadMessage[];
   followups: FollowupRead[];
+  audit: AuditLogRead[];
+}
+
+/** Editable lead fields. Only include the ones being changed. */
+export interface LeadUpdate {
+  name?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  location?: string | null;
+  bhk?: number | null;
+  budget_min?: number | null;
+  budget_max?: number | null;
+  timeline?: string | null;
+  purpose?: string | null;
+  financing?: string | null;
+  tier?: LeadTier | null;
+  status?: LeadStatus | null;
+  assigned_employee_id?: number | null; // admin only
 }
 
 export function listLeads(
@@ -330,6 +365,58 @@ export function listLeads(
 
 export function getLead(token: string, id: number): Promise<LeadDetail> {
   return authedJson<LeadDetail>(token, `/api/v1/leads/${id}`);
+}
+
+/** Edit a lead (owner or admin; reassignment is admin-only). Returns the fresh detail. */
+export function updateLead(
+  token: string,
+  id: number,
+  changes: LeadUpdate,
+): Promise<LeadDetail> {
+  return authedJson<LeadDetail>(token, `/api/v1/leads/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(changes),
+  });
+}
+
+/** Delete a lead (admin only). */
+export async function deleteLead(token: string, id: number): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/v1/leads/${id}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok && res.status !== 204) {
+    const detail = await res.json().catch(() => null);
+    throw new Error(detail?.detail ?? `Delete failed (${res.status})`);
+  }
+}
+
+/** Send an employee reply into a lead's widget chat (also takes over from the bot). */
+export function replyToLead(
+  token: string,
+  leadId: number,
+  body: string,
+): Promise<LeadMessage> {
+  return authedJson<LeadMessage>(token, `/api/v1/leads/${leadId}/reply`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ body }),
+  });
+}
+
+/** SSE stream URL for a lead's chat. EventSource can't set headers, so the
+ *  token and resume point ride in the query string. */
+export function leadStreamUrl(
+  token: string,
+  leadId: number,
+  afterMessageId: number,
+): string {
+  const params = new URLSearchParams({
+    token,
+    after: String(afterMessageId),
+  });
+  return `${API_BASE}/api/v1/leads/${leadId}/stream?${params.toString()}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -387,6 +474,19 @@ export async function createWidgetSession(
   });
   if (!res.ok) throw new Error("Could not start the chat");
   return (await res.json()) as WidgetSession;
+}
+
+/** Public SSE stream URL for a widget conversation — lets the lead see human
+ *  (employee) replies live. No auth: the conversation id is the session handle. */
+export function widgetStreamUrl(
+  conversationId: number,
+  afterMessageId: number,
+): string {
+  const params = new URLSearchParams({
+    conversation_id: String(conversationId),
+    after: String(afterMessageId),
+  });
+  return `${API_BASE}/api/v1/widget/stream?${params.toString()}`;
 }
 
 export async function sendWidgetMessage(

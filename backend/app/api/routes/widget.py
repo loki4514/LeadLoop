@@ -4,11 +4,11 @@ Customer chat is plain HTTP POST per turn, per the architecture spec. No auth:
 the conversation id acts as the session handle. Keep responses free of any
 internal data (scores, tiers, assignments are never returned here).
 """
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.agent import run_agent_turn
-from app.agent.service import GREETING
+from app.agent.service import GREETING, run_agent_turn
+from app.api.sse import message_stream
 from app.db.session import get_db
 from app.models.conversation import Conversation
 from app.models.lead import Lead
@@ -52,3 +52,23 @@ async def send_message(
     return its reply."""
     reply = await run_agent_turn(db, body.conversation_id, body.message)
     return WidgetMessageResponse(reply=reply)
+
+
+@router.get("/stream")
+async def stream_widget_messages(
+    conversation_id: int = Query(...),
+    after: int = Query(0, description="Only stream messages with id > this"),
+    db: AsyncSession = Depends(get_db),
+):
+    """Public SSE stream of new messages for a widget conversation.
+
+    Lets the lead see employee (human-takeover) replies in real time without
+    sending another message. No auth — the conversation id is the session
+    handle, same as /messages. Scoped to that one web conversation.
+    """
+    convo = await db.get(Conversation, conversation_id)
+    if convo is None or convo.channel != "web":
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found"
+        )
+    return message_stream(conversation_id, after)

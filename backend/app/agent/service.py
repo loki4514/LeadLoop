@@ -11,6 +11,7 @@ needs to be replayed.
 """
 import json
 import logging
+import re
 from functools import lru_cache
 
 from fastapi import HTTPException, status
@@ -19,7 +20,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.agent.tools import EXECUTORS, TOOL_SCHEMAS, _lead_state
+from app.agent.tools import EXECUTORS, TOOL_SCHEMAS, _lead_state, handover_to_human
 from app.core.config import settings
 from app.crud.conversation import add_message
 from app.llm.factory import _model_for  # single source of truth for the model id
@@ -37,22 +38,63 @@ GREETING = (
     "which area are you looking in?"
 )
 
+# Sent once when a chat is handed to a human, then the bot stays silent. Also
+# used as a sentinel: if it's already the last message, don't repeat it.
+HANDOVER_ACK = "Thanks — someone from our team will reply here shortly."
+
+# Deterministic human-request detection. The LLM sometimes SAYS it will hand
+# over without calling the tool, leaving the bot active for another turn — so we
+# intercept explicit requests before the model runs and hand over immediately.
+_HUMAN_REQUEST_RE = re.compile(
+    r"\b("
+    r"talk|speak|chat|connect|transfer"
+    r")\b.{0,30}\b("
+    r"human|person|agent|someone|representative|rep|executive|team|staff"
+    r")\b"
+    r"|\b(real\s+(person|human|agent))\b"
+    r"|\b(call\s+me|call\s+back|callback|phone\s+me)\b"
+    r"|\b(customer\s+(care|support|service))\b",
+    re.IGNORECASE,
+)
+
+
+def _wants_human(message: str) -> bool:
+    return bool(_HUMAN_REQUEST_RE.search(message))
+
 _SYSTEM_TEMPLATE = """You are LeadLoop, a friendly, concise real-estate assistant chatting with an \
 inbound lead on a website widget. Your job: qualify the lead, show matching \
 properties, answer questions from the knowledge base, capture contact details, \
 then score and assign the lead. Never invent property details or facts.
 
 ## Conversation flow (order matters — deliver value before asking for contact)
-1. Ask, one question at a time: location → BHK → budget.
-2. As soon as you have location + BHK (budget if given), call search_properties \
-and present the matches conversationally (title, location, price in lakhs/crores, \
-area). If nothing matches, say so and ask to widen criteria.
+1. Ask, one question at a time: buy or rent → location → BHK → budget. For \
+rent/lease the budget is a MONTHLY amount; for buying it's the total price.
+2. As soon as you have location + BHK + whether they buy/rent (budget if given), \
+call search_properties with the right listing_type. ALWAYS call the tool afresh \
+whenever the lead gives or changes any criterion (budget, area, BHK) or asks to \
+see options again — never answer about inventory from memory. Then present 2-3 of \
+the returned properties conversationally (title, location, price in lakhs/crores \
+for sale or ₹/month for rent, area) — show a couple so they can compare. \
+Reporting rule: if the tool returns count > 0 you MUST present those properties — \
+never tell the lead there is nothing when the tool returned results. If the \
+result has "fallback": true, those are the closest options (not exact-budget \
+matches) — present them honestly ("I couldn't find one exactly in that range, but \
+here are the nearest matches"). Only say we have nothing when the tool literally \
+returns count = 0.
+- On budget: convert to absolute INR (50 lakh = 5000000). "X and above" means \
+min_price = X with NO max_price. "under X" means max_price = X. A range means \
+both.
 3. Then deepen qualification: timeline → purpose (own use / investment / just \
 exploring) → financing (loan / ready cash / not sure).
-4. Only AFTER showing properties, offer a callback and ask for email + phone.
+4. After showing properties (exact OR nearest matches), invite them to go \
+deeper: "Would you like to know more about any of these, or should I schedule a \
+call so someone can walk you through them?" — then capture email + phone for the \
+callback.
 5. Once contact is captured (or the lead is clearly done answering), call \
 score_lead and then assign_employee, and tell the lead the assigned team \
-member (name from the assign_employee result) will reach out.
+member (name from the assign_employee result) will reach out. A lead is still \
+worth capturing and assigning even when nothing matched their budget — never \
+dead-end on "widen your criteria".
 
 ## Rules
 - Call save_lead_answers the moment the lead reveals any answer — don't batch.
@@ -118,7 +160,37 @@ async def run_agent_turn(
         messages.append({"role": _SENDER_ROLE[m.sender], "content": m.body})
     messages.append({"role": "user", "content": user_message})
 
+    # Human takeover: once the chat is handed over, the AI stays silent. Persist
+    # the lead's message (so the assigned employee sees it) but do NOT call the
+    # agent — a person answers from the dashboard. Acknowledge ONCE, then go
+    # quiet: if the ack is already the latest bot/human message, send nothing
+    # (empty reply; the widget skips empty bubbles). Checked before we persist
+    # the new lead message, so convo.messages is the pre-turn history.
+    already_acked = any(
+        m.body == HANDOVER_ACK
+        for m in reversed(convo.messages)
+        if m.sender != MessageSender.LEAD
+    )
     add_message(db, convo.id, MessageSender.LEAD, user_message)
+
+    # Deterministic handover: if the lead explicitly asks for a human, hand over
+    # NOW rather than hoping the LLM calls the tool this turn. This prevents the
+    # one-turn lag where the bot keeps replying after the request.
+    if lead.is_bot_active and _wants_human(user_message):
+        await handover_to_human(db, lead, reason="lead requested a human")
+        add_message(db, convo.id, MessageSender.AGENT, HANDOVER_ACK)
+        lead.last_activity_at = func.now()
+        await db.commit()
+        return HANDOVER_ACK
+
+    if not lead.is_bot_active:
+        lead.last_activity_at = func.now()
+        if already_acked:
+            await db.commit()
+            return ""
+        add_message(db, convo.id, MessageSender.AGENT, HANDOVER_ACK)
+        await db.commit()
+        return HANDOVER_ACK
 
     reply = await _agent_loop(db, lead, messages)
 

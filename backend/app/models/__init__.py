@@ -1,11 +1,14 @@
 from app.models.assignment import Assignment
+from app.models.audit import AuditLog
 from app.models.conversation import Conversation
 from app.models.document import Document, DocumentChunk
 from app.models.employee import Employee
 from app.models.enums import (
+    AuditAction,
     DocumentStatus,
     LeadStatus,
     LeadTier,
+    ListingType,
     MessageSender,
     Role,
 )
@@ -17,6 +20,7 @@ from app.models.property import Property
 
 __all__ = [
     "Assignment",
+    "AuditLog",
     "Conversation",
     "Document",
     "DocumentChunk",
@@ -26,9 +30,11 @@ __all__ = [
     "Message",
     "PasswordResetToken",
     "Property",
+    "AuditAction",
     "DocumentStatus",
     "LeadStatus",
     "LeadTier",
+    "ListingType",
     "MessageSender",
     "Role",
 ]

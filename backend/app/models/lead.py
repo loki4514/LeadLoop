@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import ForeignKey, Integer, String, func
+from sqlalchemy import Boolean, ForeignKey, Integer, String, func, true
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, TimestampMixin
@@ -38,6 +38,12 @@ class Lead(Base, TimestampMixin):
     )
     assigned_employee: Mapped["Employee | None"] = relationship(  # noqa: F821
         back_populates="assigned_leads"
+    )
+
+    # Human takeover: true while the AI qualifier is handling the chat; flipped
+    # false on handover so the agent goes quiet and a person takes over.
+    is_bot_active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=true()
     )
 
     last_activity_at: Mapped[datetime] = mapped_column(

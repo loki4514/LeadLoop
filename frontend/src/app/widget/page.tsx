@@ -12,6 +12,7 @@ import { useSearchParams } from "next/navigation";
 import {
   createWidgetSession,
   sendWidgetMessage,
+  widgetStreamUrl,
   type WidgetSession,
 } from "@/lib/api";
 
@@ -46,6 +47,32 @@ function WidgetChat() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [turns, busy]);
 
+  // Live channel: once a session exists, subscribe to the conversation stream so
+  // human (employee) replies appear without the lead sending another message.
+  // We only surface `employee` messages here — the lead's own turns and the AI
+  // agent's replies are already rendered by send(); this avoids duplicates.
+  useEffect(() => {
+    if (!session) return;
+    const seen = new Set<number>();
+    const es = new EventSource(
+      widgetStreamUrl(session.conversation_id, 0),
+    );
+    es.addEventListener("message", (ev) => {
+      const m = JSON.parse((ev as MessageEvent).data) as {
+        id: number;
+        sender: "lead" | "agent" | "employee";
+        body: string;
+      };
+      if (m.sender !== "employee" || seen.has(m.id)) return;
+      seen.add(m.id);
+      setTurns((t) => [...t, { from: "agent", text: m.body }]);
+    });
+    es.onerror = () => {
+      /* EventSource auto-reconnects; nothing to do. */
+    };
+    return () => es.close();
+  }, [session]);
+
   async function send(e: React.FormEvent) {
     e.preventDefault();
     const text = input.trim();
@@ -56,7 +83,11 @@ function WidgetChat() {
     setBusy(true);
     try {
       const reply = await sendWidgetMessage(session.conversation_id, text);
-      setTurns((t) => [...t, { from: "agent", text: reply }]);
+      // Empty reply = the bot is intentionally silent (human takeover, already
+      // acked). Don't render a blank bubble; the human's reply arrives via SSE.
+      if (reply.trim()) {
+        setTurns((t) => [...t, { from: "agent", text: reply }]);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Message failed");
     } finally {

@@ -39,6 +39,24 @@ class MessageSender(str, enum.Enum):
     EMPLOYEE = "employee"
 
 
+class AuditAction(str, enum.Enum):
+    """A recorded change to a lead, for the lightweight audit trail."""
+
+    EDITED = "edited"                # a detail field changed
+    TIER_CHANGED = "tier_changed"    # warm/cold/hot set by a human
+    REASSIGNED = "reassigned"        # owner changed (admin only)
+    DELETED = "deleted"              # lead deleted (admin only)
+
+
+class ListingType(str, enum.Enum):
+    """How a property is offered. Drives which price column is meaningful:
+    SALE uses ``price`` (total INR); RENT/LEASE use ``rent_pm`` (monthly INR)."""
+
+    SALE = "sale"
+    RENT = "rent"
+    LEASE = "lease"
+
+
 class DocumentStatus(str, enum.Enum):
     PENDING = "pending"        # uploaded, queued for ingestion
     PROCESSING = "processing"  # worker is extracting/embedding

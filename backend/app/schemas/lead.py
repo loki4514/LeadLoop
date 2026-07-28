@@ -1,9 +1,9 @@
 """Dashboard-facing shapes for leads, followups, and properties."""
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
-from app.models.enums import LeadStatus, LeadTier
+from app.models.enums import AuditAction, LeadStatus, LeadTier
 
 
 class EmployeeBrief(BaseModel):
@@ -33,6 +33,8 @@ class LeadSummary(BaseModel):
     status: LeadStatus
     ad_source: str | None
     assigned_employee: EmployeeBrief | None
+    # False once the chat is handed over to a human (AI qualifier silenced).
+    is_bot_active: bool
     last_activity_at: datetime
     created_at: datetime
 
@@ -60,9 +62,49 @@ class FollowupUpdate(BaseModel):
     draft_body: str = Field(..., min_length=1, max_length=10_000)
 
 
+class LeadReplyRequest(BaseModel):
+    # An employee's message typed into a handed-over widget conversation.
+    body: str = Field(..., min_length=1, max_length=2000)
+
+
+class LeadUpdate(BaseModel):
+    """Editable lead fields. All optional — only provided fields change. Every
+    change is audited. `assigned_employee_id` is admin-only (enforced in the
+    route); owners may edit the rest of their own leads (including tier)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str | None = Field(default=None, max_length=255)
+    email: EmailStr | None = None
+    phone: str | None = Field(default=None, max_length=50)
+    location: str | None = Field(default=None, max_length=255)
+    bhk: int | None = Field(default=None, ge=0, le=20)
+    budget_min: int | None = Field(default=None, ge=0)
+    budget_max: int | None = Field(default=None, ge=0)
+    timeline: str | None = Field(default=None, max_length=255)
+    purpose: str | None = Field(default=None, max_length=255)
+    financing: str | None = Field(default=None, max_length=255)
+    tier: LeadTier | None = None
+    status: LeadStatus | None = None
+    assigned_employee_id: int | None = None  # admin-only
+
+
+class AuditLogRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    action: AuditAction
+    field: str | None
+    old_value: str | None
+    new_value: str | None
+    actor: EmployeeBrief | None
+    created_at: datetime
+
+
 class LeadDetail(LeadSummary):
     messages: list[LeadMessage]
     followups: list[FollowupRead]
+    audit: list[AuditLogRead] = []
 
 
 class PropertyCreate(BaseModel):

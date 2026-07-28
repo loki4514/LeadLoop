@@ -47,6 +47,31 @@ async def get_current_employee(
     return employee
 
 
+async def get_current_employee_from_query(
+    token: str,
+    db: AsyncSession = Depends(get_db),
+    redis: Redis = Depends(get_redis),
+) -> Employee:
+    """Same validation as get_current_employee, but reads the bearer token from a
+    query param. Needed for SSE (EventSource cannot set an Authorization header).
+    The token still travels over TLS and is validated identically."""
+    payload = decode_access_token(token)
+    if payload is None:
+        raise _credentials_error
+
+    employee_id = payload.get("sub")
+    session_id = payload.get("sid")
+    if employee_id is None or session_id is None:
+        raise _credentials_error
+    if not await session_exists(redis, session_id):
+        raise _credentials_error
+
+    employee = await employee_crud.get_by_id(db, int(employee_id))
+    if employee is None or not employee.is_active:
+        raise _credentials_error
+    return employee
+
+
 def require_roles(*roles: Role) -> Callable:
     """Dependency factory enforcing role-based access control."""
 

@@ -11,13 +11,13 @@ Design rules (from the product spec):
 import logging
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.assignment import assign_employee as _assign_employee
 from app.agent.scoring import FINANCING, PURPOSES, TIMELINES, score_lead as _score_lead
 from app.models.employee import Employee
-from app.models.enums import LeadStatus
+from app.models.enums import LeadStatus, ListingType
 from app.models.lead import Lead
 from app.models.property import Property
 from app.retrieval import search_documents
@@ -29,43 +29,122 @@ logger = logging.getLogger("agent.tools")
 # ---------------------------------------------------------------------------
 
 
+# Common alternate city spellings → the name used in inventory. Leads type
+# "Bengaluru"/"Bombay"/"Gurugram" constantly; the catalogue uses one spelling.
+_CITY_ALIASES = {
+    "bengaluru": "Bangalore",
+    "bengalooru": "Bangalore",
+    "bangalooru": "Bangalore",
+    "bombay": "Mumbai",
+    "gurugram": "Gurgaon",
+    "calcutta": "Kolkata",
+    "madras": "Chennai",
+    "new delhi": "Delhi",
+    "ncr": "Delhi",
+}
+
+
+def _normalize_location(location: str) -> str:
+    """Map a lead's free-text location onto the catalogue's spelling. Matches the
+    whole string or a trailing '<area>, <city>' token, so 'Bengaluru' and
+    'Whitefield, Bengaluru' both resolve to 'Bangalore'."""
+    raw = location.strip()
+    key = raw.lower()
+    if key in _CITY_ALIASES:
+        return _CITY_ALIASES[key]
+    # '<area>, <city>' — normalize just the city part if it's an alias.
+    if "," in raw:
+        area, _, city = raw.rpartition(",")
+        city_key = city.strip().lower()
+        if city_key in _CITY_ALIASES:
+            return f"{area.strip()}, {_CITY_ALIASES[city_key]}"
+    return raw
+
+
+def _price_col(listing_type: ListingType):
+    """The price column that carries meaning for this listing type."""
+    return Property.price if listing_type == ListingType.SALE else Property.rent_pm
+
+
+def _serialize_property(p: Property) -> dict[str, Any]:
+    is_sale = p.listing_type == ListingType.SALE
+    return {
+        "id": p.id,
+        "title": p.title,
+        "location": p.location,
+        "bhk": p.bhk,
+        "listing_type": p.listing_type.value,
+        # One price field, unit implied by listing_type: total for sale,
+        # monthly for rent/lease.
+        "price_inr": p.price if is_sale else p.rent_pm,
+        "price_unit": "total" if is_sale else "per_month",
+        "area_sqft": p.area_sqft,
+        "description": p.description,
+    }
+
+
 async def search_properties(
     db: AsyncSession,
     lead: Lead,
     location: str | None = None,
     bhk: int | None = None,
+    listing_type: str | None = None,
     min_price: int | None = None,
     max_price: int | None = None,
     limit: int = 3,
 ) -> dict[str, Any]:
-    """Parameterized, indexed property lookup (no vector search, no raw SQL)."""
-    stmt = select(Property)
-    if location:
-        stmt = stmt.where(Property.location.ilike(f"%{location.strip()}%"))
-    if bhk is not None:
-        stmt = stmt.where(Property.bhk == bhk)
-    if min_price is not None:
-        stmt = stmt.where(Property.price >= min_price)
-    if max_price is not None:
-        stmt = stmt.where(Property.price <= max_price)
-    stmt = stmt.order_by(Property.price).limit(max(1, min(limit, 10)))
+    """Parameterized, indexed property lookup (no vector search, no raw SQL).
 
-    result = await db.execute(stmt)
+    listing_type is 'sale' | 'rent' | 'lease' — defaults to 'sale'. Budget is
+    matched against the total price for sale, or the monthly amount for
+    rent/lease. If nothing matches within budget, falls back to the closest
+    listings by price (same type/location/BHK) and flags the result.
+    """
+    lt = ListingType(listing_type) if listing_type in {e.value for e in ListingType} \
+        else ListingType.SALE
+    price_col = _price_col(lt)
+    limit = max(1, min(limit, 10))
+
+    base = select(Property).where(Property.listing_type == lt)
+    if location:
+        base = base.where(Property.location.ilike(f"%{_normalize_location(location)}%"))
+    if bhk is not None:
+        base = base.where(Property.bhk == bhk)
+
+    # 1) Strict pass — honour the budget.
+    stmt = base
+    if min_price is not None:
+        stmt = stmt.where(price_col >= min_price)
+    if max_price is not None:
+        stmt = stmt.where(price_col <= max_price)
+    result = await db.execute(stmt.order_by(price_col).limit(limit))
     props = list(result.scalars().all())
+    if props:
+        return {
+            "count": len(props),
+            "fallback": False,
+            "listing_type": lt.value,
+            "properties": [_serialize_property(p) for p in props],
+        }
+
+    # 2) Nearest-match fallback — drop the budget filter, order by closeness to
+    # the requested budget (its midpoint, or whichever bound was given).
+    target = None
+    if min_price is not None and max_price is not None:
+        target = (min_price + max_price) // 2
+    elif max_price is not None:
+        target = max_price
+    elif min_price is not None:
+        target = min_price
+
+    order = func.abs(price_col - target) if target is not None else price_col
+    result = await db.execute(base.order_by(order).limit(limit))
+    near = list(result.scalars().all())
     return {
-        "count": len(props),
-        "properties": [
-            {
-                "id": p.id,
-                "title": p.title,
-                "location": p.location,
-                "bhk": p.bhk,
-                "price_inr": p.price,
-                "area_sqft": p.area_sqft,
-                "description": p.description,
-            }
-            for p in props
-        ],
+        "count": len(near),
+        "fallback": bool(near),  # these are closest-by-price, not in-budget
+        "listing_type": lt.value,
+        "properties": [_serialize_property(p) for p in near],
     }
 
 
@@ -179,6 +258,10 @@ async def handover_to_human(
         result = await assign_employee(db, lead)
         if not result.get("assigned"):
             return {"handed_over": False, "error": result.get("error")}
+    # Silence the AI qualifier — the assigned human now owns this chat. The
+    # widget route checks this flag and stops calling the agent. Persisted on
+    # the caller's commit (lead is a tracked ORM object; no db.execute needed).
+    lead.is_bot_active = False
     logger.info("Lead %s handed over to human (reason=%r)", lead.id, reason)
     return {"handed_over": True, "employee_id": lead.assigned_employee_id}
 
@@ -193,17 +276,32 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
         "function": {
             "name": "search_properties",
             "description": (
-                "Search the property inventory. Call once you know at least the "
-                "location and BHK (budget optional). Prices are absolute INR "
-                "(e.g. 80 lakh = 8000000, 1.2 crore = 12000000)."
+                "Search the property inventory. Call once you know the location, "
+                "BHK, and whether the lead wants to buy or rent (budget optional). "
+                "For sale, budget is the total price in INR (80 lakh = 8000000). "
+                "For rent/lease, budget is the MONTHLY amount in INR (25k = 25000). "
+                "If nothing fits the budget, the result comes back with "
+                "\"fallback\": true and the closest listings — present those as "
+                "near matches, not exact ones."
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "location": {"type": "string", "description": "Area/locality/city"},
                     "bhk": {"type": "integer", "description": "Bedrooms, e.g. 2 for 2BHK"},
-                    "min_price": {"type": "integer", "description": "Min budget in INR"},
-                    "max_price": {"type": "integer", "description": "Max budget in INR"},
+                    "listing_type": {
+                        "type": "string",
+                        "enum": ["sale", "rent", "lease"],
+                        "description": "Buy=sale, rent, or lease. Default sale.",
+                    },
+                    "min_price": {
+                        "type": "integer",
+                        "description": "Min budget INR — total for sale, monthly for rent/lease",
+                    },
+                    "max_price": {
+                        "type": "integer",
+                        "description": "Max budget INR — total for sale, monthly for rent/lease",
+                    },
                     "limit": {"type": "integer", "description": "Max results (default 3)"},
                 },
             },
