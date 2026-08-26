@@ -30,12 +30,27 @@ def record_audit(
     return entry
 
 
+async def list_audit(
+    db: AsyncSession,
+    *,
+    lead_id: int | None = None,
+    actor_employee_id: int | None = None,
+    limit: int | None = None,
+) -> list[AuditLog]:
+    """Audit history, newest first, with the actor loaded. Optionally filtered
+    by lead and/or by the employee who performed the action."""
+    stmt = select(AuditLog).options(selectinload(AuditLog.actor))
+    if lead_id is not None:
+        stmt = stmt.where(AuditLog.lead_id == lead_id)
+    if actor_employee_id is not None:
+        stmt = stmt.where(AuditLog.actor_employee_id == actor_employee_id)
+    stmt = stmt.order_by(AuditLog.id.desc())
+    if limit is not None:
+        stmt = stmt.limit(limit)
+    result = await db.execute(stmt)
+    return list(result.scalars().all())
+
+
 async def list_for_lead(db: AsyncSession, lead_id: int) -> list[AuditLog]:
     """Audit history for a lead, newest first, with the actor loaded."""
-    result = await db.execute(
-        select(AuditLog)
-        .where(AuditLog.lead_id == lead_id)
-        .options(selectinload(AuditLog.actor))
-        .order_by(AuditLog.id.desc())
-    )
-    return list(result.scalars().all())
+    return await list_audit(db, lead_id=lead_id)

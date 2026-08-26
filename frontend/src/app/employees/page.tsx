@@ -3,10 +3,13 @@
 import { useCallback, useEffect, useState } from "react";
 
 import AppShell from "@/components/AppShell";
+import ConfirmModal from "@/components/ConfirmModal";
 import {
   createEmployee,
+  deactivateEmployee,
   getToken,
   listEmployees,
+  setEmployeeActive,
   type Employee,
 } from "@/lib/api";
 
@@ -120,6 +123,10 @@ function AddEmployeeForm({ onCreated }: { onCreated: () => void }) {
 export default function EmployeesPage() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [error, setError] = useState<string | null>(null);
+  // The employee pending deactivation / reactivation confirmation, if any.
+  const [toDeactivate, setToDeactivate] = useState<Employee | null>(null);
+  const [toReactivate, setToReactivate] = useState<Employee | null>(null);
+  const [busyId, setBusyId] = useState<number | null>(null);
 
   const refresh = useCallback(async () => {
     const token = getToken();
@@ -134,6 +141,40 @@ export default function EmployeesPage() {
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  async function confirmDeactivate() {
+    const token = getToken();
+    const target = toDeactivate;
+    setToDeactivate(null);
+    if (!token || !target) return;
+    setError(null);
+    setBusyId(target.id);
+    try {
+      await deactivateEmployee(token, target.id);
+      await refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to deactivate");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function confirmReactivate() {
+    const token = getToken();
+    const target = toReactivate;
+    setToReactivate(null);
+    if (!token || !target) return;
+    setError(null);
+    setBusyId(target.id);
+    try {
+      await setEmployeeActive(token, target.id, true);
+      await refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to reactivate");
+    } finally {
+      setBusyId(null);
+    }
+  }
 
   return (
     <AppShell>
@@ -167,6 +208,11 @@ export default function EmployeesPage() {
                     <th className="px-4 py-2 font-medium">Email</th>
                     <th className="px-4 py-2 font-medium">Role</th>
                     <th className="px-4 py-2 font-medium">Status</th>
+                    {me.role === "admin" && (
+                      <th className="px-4 py-2 text-right font-medium">
+                        Actions
+                      </th>
+                    )}
                   </tr>
                 </thead>
                 <tbody>
@@ -189,21 +235,88 @@ export default function EmployeesPage() {
                       </td>
                       <td className="px-4 py-2">
                         <span
-                          className={
+                          className={`inline-flex items-center gap-1.5 ${
                             e.is_active
                               ? "text-green-600 dark:text-green-400"
                               : "text-neutral-400"
-                          }
+                          }`}
                         >
-                          {e.is_active ? "active" : "inactive"}
+                          <span
+                            className={`h-1.5 w-1.5 rounded-full ${
+                              e.is_active
+                                ? e.is_online
+                                  ? "bg-green-500"
+                                  : "bg-green-500/40"
+                                : "bg-neutral-400"
+                            }`}
+                          />
+                          {e.is_active
+                            ? e.is_online
+                              ? "active · online"
+                              : "active"
+                            : "deactivated"}
                         </span>
                       </td>
+                      {me.role === "admin" && (
+                        <td className="px-4 py-2 text-right">
+                          {e.id === me.id ? (
+                            <span className="text-xs text-neutral-400">—</span>
+                          ) : e.is_active ? (
+                            <button
+                              disabled={busyId === e.id}
+                              onClick={() => setToDeactivate(e)}
+                              className="rounded-md border border-red-300 px-2.5 py-1 text-xs font-medium text-red-600 transition hover:bg-red-50 disabled:opacity-50 dark:border-red-500/40 dark:hover:bg-red-500/10"
+                            >
+                              Deactivate
+                            </button>
+                          ) : (
+                            <button
+                              disabled={busyId === e.id}
+                              onClick={() => setToReactivate(e)}
+                              className="rounded-md border border-neutral-300 px-2.5 py-1 text-xs font-medium text-neutral-600 transition hover:bg-neutral-100 disabled:opacity-50 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-800"
+                            >
+                              Reactivate
+                            </button>
+                          )}
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
               </table>
             )}
           </div>
+
+          <ConfirmModal
+            open={toDeactivate !== null}
+            title="Deactivate employee?"
+            message={
+              <>
+                <span className="font-semibold">{toDeactivate?.name}</span> will
+                no longer be able to log in and won&apos;t receive new lead
+                assignments. Their existing leads and history are kept, and you
+                can reactivate them anytime.
+              </>
+            }
+            tone="danger"
+            confirmLabel="Deactivate"
+            onConfirm={confirmDeactivate}
+            onCancel={() => setToDeactivate(null)}
+          />
+
+          <ConfirmModal
+            open={toReactivate !== null}
+            title="Reactivate employee?"
+            message={
+              <>
+                <span className="font-semibold">{toReactivate?.name}</span> will
+                be able to log in again and can receive new lead assignments.
+              </>
+            }
+            confirmLabel="Reactivate"
+            onConfirm={confirmReactivate}
+            onCancel={() => setToReactivate(null)}
+          />
         </div>
       )}
     </AppShell>

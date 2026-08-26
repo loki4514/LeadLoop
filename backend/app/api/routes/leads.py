@@ -71,7 +71,13 @@ async def get_lead(
     db: AsyncSession = Depends(get_db),
     employee: Employee = Depends(get_current_employee),
 ):
-    """One lead with its full widget conversation and follow-up drafts."""
+    """One lead with its widget conversation and follow-up drafts.
+
+    Owners (and admins) get the full detail. A non-owner employee gets the
+    lead's metadata — including who it's assigned to — but the chat transcript,
+    follow-up drafts and audit trail are withheld (``can_edit=False``), so they
+    can see *who* is working the lead without reading its private conversation.
+    """
     result = await db.execute(
         select(Lead)
         .where(Lead.id == lead_id)
@@ -80,6 +86,21 @@ async def get_lead(
     lead = result.scalar_one_or_none()
     if lead is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Lead not found")
+
+    can_edit = (
+        employee.role == Role.ADMIN or lead.assigned_employee_id == employee.id
+    )
+
+    summary = LeadSummary.model_validate(lead)
+    if not can_edit:
+        # Metadata only — no transcript, follow-ups, or audit for other people's leads.
+        return LeadDetail(
+            **summary.model_dump(),
+            messages=[],
+            followups=[],
+            audit=[],
+            can_edit=False,
+        )
 
     convo_result = await db.execute(
         select(Conversation)
@@ -103,10 +124,38 @@ async def get_lead(
         for a in await audit_crud.list_for_lead(db, lead.id)
     ]
 
-    summary = LeadSummary.model_validate(lead)
     return LeadDetail(
-        **summary.model_dump(), messages=messages, followups=followups, audit=audit
+        **summary.model_dump(),
+        messages=messages,
+        followups=followups,
+        audit=audit,
+        can_edit=True,
     )
+
+
+@router.get("/{lead_id}/activity", response_model=list[AuditLogRead])
+async def get_lead_activity(
+    lead_id: int,
+    actor_id: int | None = Query(
+        default=None, description="Filter to actions by this employee"
+    ),
+    limit: int = Query(default=100, ge=1, le=500),
+    db: AsyncSession = Depends(get_db),
+    employee: Employee = Depends(get_current_employee),
+):
+    """Activity/audit trail for a lead, optionally filtered by the acting
+    employee. Owner or admin only (same boundary as the lead detail)."""
+    lead = await db.get(Lead, lead_id)
+    if lead is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Lead not found")
+    if employee.role != Role.ADMIN and lead.assigned_employee_id != employee.id:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, detail="This lead is not assigned to you"
+        )
+    rows = await audit_crud.list_audit(
+        db, lead_id=lead_id, actor_employee_id=actor_id, limit=limit
+    )
+    return [AuditLogRead.model_validate(a) for a in rows]
 
 
 # ---------------------------------------------------------------------------

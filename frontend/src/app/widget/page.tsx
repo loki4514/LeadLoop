@@ -9,6 +9,7 @@
 import { Suspense, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 
+import RichText from "@/components/RichText";
 import {
   createWidgetSession,
   sendWidgetMessage,
@@ -115,13 +116,17 @@ function WidgetChat() {
         {turns.map((t, i) => (
           <div
             key={i}
-            className={`max-w-[85%] whitespace-pre-wrap rounded-2xl px-4 py-2.5 text-sm ${
+            className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-sm ${
               t.from === "lead"
                 ? "self-end rounded-br-sm bg-indigo-600 text-white"
                 : "self-start rounded-bl-sm bg-white shadow-sm dark:bg-neutral-800"
             }`}
           >
-            {t.text}
+            {t.from === "lead" ? (
+              <span className="whitespace-pre-wrap">{t.text}</span>
+            ) : (
+              <RichText text={t.text} />
+            )}
           </div>
         ))}
         {busy && (

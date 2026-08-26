@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import Logo from "@/components/Logo";
 import {
   clearToken,
   fetchMe,
@@ -13,7 +14,7 @@ import {
 } from "@/lib/api";
 
 const NAV = [
-  { href: "/", label: "Home" },
+  { href: "/dashboard", label: "Home" },
   { href: "/leads", label: "Leads" },
   { href: "/chat", label: "Chat" },
   { href: "/documents", label: "Documents" },
@@ -70,13 +71,10 @@ export default function AppShell({
       <header className="border-b border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900">
         <div className="mx-auto flex max-w-4xl items-center justify-between px-4 py-3">
           <div className="flex items-center gap-6">
-            <span className="font-semibold">Lead Agent</span>
+            <Logo href="/dashboard" size="sm" />
             <nav className="flex gap-1">
               {NAV.map((item) => {
-                const active =
-                  item.href === "/"
-                    ? pathname === "/"
-                    : pathname.startsWith(item.href);
+                const active = pathname.startsWith(item.href);
                 return (
                   <Link
                     key={item.href}

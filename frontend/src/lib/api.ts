@@ -24,6 +24,7 @@ export interface Employee {
   email: string;
   role: "employee" | "admin";
   is_active: boolean;
+  is_online?: boolean;
 }
 
 /** Log in with email + password. Returns the access token. */
@@ -262,6 +263,29 @@ export function createEmployee(
   });
 }
 
+/** Deactivate (soft delete) an employee — admin only. Preserves their leads/history. */
+export function deactivateEmployee(
+  token: string,
+  id: number,
+): Promise<Employee> {
+  return authedJson<Employee>(token, `/api/v1/employees/${id}`, {
+    method: "DELETE",
+  });
+}
+
+/** Enable/disable an employee (admin only). Pass is_active=true to reactivate. */
+export function setEmployeeActive(
+  token: string,
+  id: number,
+  isActive: boolean,
+): Promise<Employee> {
+  return authedJson<Employee>(token, `/api/v1/employees/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ is_active: isActive }),
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Leads dashboard
 // ---------------------------------------------------------------------------
@@ -332,6 +356,9 @@ export interface LeadDetail extends LeadSummary {
   messages: LeadMessage[];
   followups: FollowupRead[];
   audit: AuditLogRead[];
+  // False when the viewer is a non-owner employee: metadata is visible but the
+  // chat transcript, follow-ups, audit and reply box are withheld by the API.
+  can_edit: boolean;
 }
 
 /** Editable lead fields. Only include the ones being changed. */
@@ -365,6 +392,25 @@ export function listLeads(
 
 export function getLead(token: string, id: number): Promise<LeadDetail> {
   return authedJson<LeadDetail>(token, `/api/v1/leads/${id}`);
+}
+
+/**
+ * Activity/audit trail for a lead, optionally filtered by the acting employee.
+ * Owner or admin only (mirrors the detail boundary).
+ */
+export function getLeadActivity(
+  token: string,
+  leadId: number,
+  opts?: { actorId?: number; limit?: number },
+): Promise<AuditLogRead[]> {
+  const q = new URLSearchParams();
+  if (opts?.actorId != null) q.set("actor_id", String(opts.actorId));
+  if (opts?.limit != null) q.set("limit", String(opts.limit));
+  const qs = q.toString();
+  return authedJson<AuditLogRead[]>(
+    token,
+    `/api/v1/leads/${leadId}/activity${qs ? `?${qs}` : ""}`,
+  );
 }
 
 /** Edit a lead (owner or admin; reassignment is admin-only). Returns the fresh detail. */

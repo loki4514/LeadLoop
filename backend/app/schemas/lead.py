@@ -105,6 +105,10 @@ class LeadDetail(LeadSummary):
     messages: list[LeadMessage]
     followups: list[FollowupRead]
     audit: list[AuditLogRead] = []
+    # True when the viewer owns this lead or is an admin. When False the viewer
+    # is a non-owner employee: they see metadata (incl. who it's assigned to)
+    # but the chat transcript, follow-ups and audit are withheld.
+    can_edit: bool = True
 
 
 class PropertyCreate(BaseModel):

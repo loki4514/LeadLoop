@@ -18,3 +18,10 @@ class EmployeeRead(EmployeeBase):
 
     id: int
     is_active: bool
+    is_online: bool = False
+
+
+class EmployeeUpdate(BaseModel):
+    """Admin-editable employee fields. Currently just the active switch."""
+
+    is_active: bool

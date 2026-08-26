@@ -46,27 +46,47 @@ async def login(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
         )
+    # is_active is the admin enable/disable switch — a deactivated account
+    # cannot log in (and cannot un-deactivate itself by logging in).
     if not employee.is_active:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Inactive account"
+            status_code=status.HTTP_403_FORBIDDEN, detail="Account is deactivated"
         )
+
+    # Presence: mark online for the new session.
+    employee.is_online = True
 
     session_id = await create_session(redis, str(employee.id))
     token = create_access_token(
         subject=str(employee.id), session_id=session_id, role=employee.role.value
     )
+    await db.commit()
     return Token(access_token=token)
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 async def logout(
     token: str = Depends(oauth2_scheme),
+    db: AsyncSession = Depends(get_db),
     redis: Redis = Depends(get_redis),
 ):
-    """Revoke the current session so the JWT can no longer be used."""
+    """Revoke the current session and mark the employee offline.
+
+    Sets `is_online=False` (presence) — NOT `is_active`, which is the admin
+    enable/disable switch. The session is revoked so the JWT can no longer be
+    used regardless.
+    """
     payload = decode_access_token(token)
-    if payload and payload.get("sid"):
+    if payload is None:
+        return
+    if payload.get("sid"):
         await delete_session(redis, payload["sid"])
+    sub = payload.get("sub")
+    if sub is not None:
+        employee = await employee_crud.get_by_id(db, int(sub))
+        if employee is not None and employee.is_online:
+            employee.is_online = False
+            await db.commit()
 
 
 @router.get("/me", response_model=EmployeeRead)

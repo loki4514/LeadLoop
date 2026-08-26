@@ -15,7 +15,11 @@ class Employee(Base, TimestampMixin):
     role: Mapped[Role] = mapped_column(
         pg_enum(Role, "role"), default=Role.EMPLOYEE, nullable=False
     )
+    # Admin enable/disable switch — login is refused while False.
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # Session presence — set False on logout, True on login. Independent of
+    # is_active so deactivating an account can't be undone by logging in.
+    is_online: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     assigned_leads: Mapped[list["Lead"]] = relationship(  # noqa: F821
         back_populates="assigned_employee"
