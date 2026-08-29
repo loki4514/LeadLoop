@@ -6,6 +6,7 @@ This is the unit of work the RQ worker runs. It is synchronous on purpose
 import logging
 
 from app.core.config import settings
+from app.core.storage import local_copy
 from app.db.sync_session import SyncSessionLocal
 from app.embeddings import get_embedding_provider
 from app.ingestion.chunking import chunk_text
@@ -30,7 +31,11 @@ def ingest_document(document_id: int) -> None:
         session.commit()
 
         try:
-            markdown = extract_markdown(doc.storage_path)
+            # storage_path is an r2:// URI in prod (the API container that wrote
+            # the upload has a different filesystem than this worker), so pull it
+            # down to a temp file MarkItDown can open. A local path passes through.
+            with local_copy(doc.storage_path) as path:
+                markdown = extract_markdown(path)
             chunks = chunk_text(
                 markdown,
                 chunk_size=settings.CHUNK_SIZE,

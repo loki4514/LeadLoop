@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_employee
-from app.core.config import settings
+from app.core.storage import save_upload
 from app.db.session import get_db
 from app.models.document import Document
 from app.models.employee import Employee
@@ -39,14 +39,13 @@ async def upload_document(
             detail=f"Unsupported file type {ext!r}. Allowed: {sorted(ALLOWED_EXTENSIONS)}",
         )
 
-    os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
     stored_name = f"{uuid.uuid4().hex}{ext}"
-    storage_path = os.path.join(settings.UPLOAD_DIR, stored_name)
 
-    # Stream to disk so large files don't sit in memory.
-    with open(storage_path, "wb") as out:
-        while chunk := await file.read(1024 * 1024):
-            out.write(chunk)
+    # SpooledTemporaryFile keeps small uploads in memory and spills large ones to
+    # disk, so this streams either way. save_upload() then writes it to the
+    # bucket (prod) or UPLOAD_DIR (dev) and returns the storage_path to record.
+    await file.seek(0)
+    storage_path = save_upload(file.file, stored_name)
 
     doc = Document(
         filename=filename,

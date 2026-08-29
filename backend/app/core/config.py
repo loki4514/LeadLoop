@@ -80,6 +80,16 @@ class Settings(BaseSettings):
 
     # Document ingestion
     UPLOAD_DIR: str = "/data/uploads"
+    # S3-compatible object storage (Cloudflare R2, MinIO, AWS S3). Uploads go to
+    # the bucket when S3_BUCKET and S3_ENDPOINT_URL are both set; otherwise they
+    # stay on local disk under UPLOAD_DIR. Required in any deployment where the
+    # API and the worker don't share a filesystem.
+    S3_ENDPOINT_URL: str = ""
+    S3_BUCKET: str = ""
+    S3_ACCESS_KEY_ID: str = ""
+    S3_SECRET_ACCESS_KEY: str = ""
+    S3_REGION: str = "auto"  # R2 uses "auto"
+    S3_PREFIX: str = "uploads/"
     CHUNK_SIZE: int = 800  # approx tokens per chunk
     CHUNK_OVERLAP: int = 100
 
