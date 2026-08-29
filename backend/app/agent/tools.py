@@ -214,9 +214,13 @@ async def score_lead(db: AsyncSession, lead: Lead) -> dict[str, Any]:
     return {"score": score, "tier": tier.value}
 
 
-async def assign_employee(db: AsyncSession, lead: Lead) -> dict[str, Any]:
+async def assign_employee(
+    db: AsyncSession, lead: Lead, prefer_online: bool = False
+) -> dict[str, Any]:
     """Deterministic round-robin, priority-weighted assignment. Idempotent —
-    an already-assigned lead keeps its owner (no double assignment)."""
+    an already-assigned lead keeps its owner (no double assignment).
+
+    ``prefer_online`` prefers a currently-online agent (used for live handovers)."""
     if lead.assigned_employee_id is not None:
         result = await db.execute(
             select(Employee).where(Employee.id == lead.assigned_employee_id)
@@ -227,15 +231,21 @@ async def assign_employee(db: AsyncSession, lead: Lead) -> dict[str, Any]:
                 "assigned": True,
                 "employee_name": existing.name,
                 "employee_id": existing.id,
+                "online": existing.is_online,
                 "note": "already assigned",
             }
     if lead.tier is None:  # scoring is a precondition; run it rather than fail
         await score_lead(db, lead)
-    employee = await _assign_employee(db, lead)
+    employee = await _assign_employee(db, lead, prefer_online=prefer_online)
     if employee is None:
         return {"assigned": False, "error": "No active employees to assign to."}
     await db.flush()
-    return {"assigned": True, "employee_name": employee.name, "employee_id": employee.id}
+    return {
+        "assigned": True,
+        "employee_name": employee.name,
+        "employee_id": employee.id,
+        "online": employee.is_online,
+    }
 
 
 async def search_knowledge_base(
@@ -253,17 +263,39 @@ async def search_knowledge_base(
 async def handover_to_human(
     db: AsyncSession, lead: Lead, reason: str | None = None
 ) -> dict[str, Any]:
-    """Route the conversation to a person; assigns an owner if none yet."""
-    if lead.assigned_employee_id is None:
-        result = await assign_employee(db, lead)
-        if not result.get("assigned"):
-            return {"handed_over": False, "error": result.get("error")}
-    # Silence the AI qualifier — the assigned human now owns this chat. The
-    # widget route checks this flag and stops calling the agent. Persisted on
-    # the caller's commit (lead is a tracked ORM object; no db.execute needed).
+    """Route the conversation to a person; assigns an owner (preferring an online
+    agent) if none yet.
+
+    Two outcomes:
+    - An active agent exists -> assign, silence the AI, hand the chat over. The
+      result carries the agent's name and whether they're online right now.
+    - No active agent exists at all -> DO NOT silence the AI (nobody could take
+      over, so the bot must keep helping). Returns no_agent_available so the
+      caller keeps the qualifier running to capture contact instead.
+    """
+    result = await assign_employee(db, lead, prefer_online=True)
+    if not result.get("assigned"):
+        # All agents offline/inactive — keep the AI in control; it will apologise
+        # and capture a contact so the lead isn't lost.
+        logger.info("Lead %s handover requested but no agent available", lead.id)
+        return {"handed_over": False, "no_agent_available": True}
+
+    # An owner exists (online preferred). Silence the AI — the human owns the
+    # chat now; the widget route checks this flag and stops calling the agent.
     lead.is_bot_active = False
-    logger.info("Lead %s handed over to human (reason=%r)", lead.id, reason)
-    return {"handed_over": True, "employee_id": lead.assigned_employee_id}
+    logger.info(
+        "Lead %s handed over to %s (online=%s, reason=%r)",
+        lead.id,
+        result.get("employee_name"),
+        result.get("online"),
+        reason,
+    )
+    return {
+        "handed_over": True,
+        "employee_id": lead.assigned_employee_id,
+        "employee_name": result.get("employee_name"),
+        "online": result.get("online"),
+    }
 
 
 # ---------------------------------------------------------------------------

@@ -142,7 +142,13 @@ tool calls.
 - Factual questions (amenities, loans, legal, project info): call \
 search_knowledge_base first; if it has nothing, say you'll have the team confirm.
 - If the lead asks for a human, is annoyed, or goes beyond your scope, call \
-handover_to_human and let them know a person will take over.
+handover_to_human. Then read its result: if "handed_over" is true, tell them \
+you've connected them with that agent (use employee_name) who'll reply shortly. \
+If "no_agent_available" is true, DON'T promise a live person — warmly say the \
+team is offline right now, reassure them someone will follow up, and get their \
+email OR phone (just one is fine) via capture_contact so they're not lost. \
+Never leave a "talk to a human" request without either a real handover or a \
+captured contact.
 - NEVER reveal internal operations to the customer: no mention of scores, \
 tiers ("hot lead"), "your lead", assignment, or tools. After scoring/assigning \
 just say "[employee name] from our team will reach out to you shortly."
@@ -215,11 +221,31 @@ async def run_agent_turn(
     # NOW rather than hoping the LLM calls the tool this turn. This prevents the
     # one-turn lag where the bot keeps replying after the request.
     if lead.is_bot_active and _wants_human(user_message):
-        await handover_to_human(db, lead, reason="lead requested a human")
-        add_message(db, convo.id, MessageSender.AGENT, HANDOVER_ACK)
-        lead.last_activity_at = func.now()
-        await db.commit()
-        return HANDOVER_ACK
+        result = await handover_to_human(db, lead, reason="lead requested a human")
+        if result.get("handed_over"):
+            # An agent owns the chat now (online preferred). Name them, then the
+            # AI goes silent (is_bot_active was flipped inside handover).
+            name = result.get("employee_name") or "someone from our team"
+            ack = f"Thanks — I've connected you with {name}, who'll reply here shortly."
+            add_message(db, convo.id, MessageSender.AGENT, ack)
+            lead.last_activity_at = func.now()
+            await db.commit()
+            return ack
+        # No agent available at all: DON'T silence the AI. Nudge the model to run
+        # the "everyone's offline" script this turn, then fall through to the loop.
+        messages.append(
+            {
+                "role": "system",
+                "content": (
+                    "NOTE: The lead just asked to speak to a human, but no agent "
+                    "is available right now. Do NOT promise a live person. Warmly "
+                    "let them know the team is offline at the moment, reassure them "
+                    "you'll make sure someone follows up, and ask for their email "
+                    "OR phone (one is enough) via capture_contact so they aren't "
+                    "lost. Keep helping in the meantime."
+                ),
+            }
+        )
 
     if not lead.is_bot_active:
         lead.last_activity_at = func.now()
