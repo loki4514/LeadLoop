@@ -19,12 +19,18 @@ from app.models.lead import Lead
 _TIER_WEIGHT = {LeadTier.HOT: 3, LeadTier.WARM: 2, LeadTier.COLD: 1}
 
 
-async def assign_employee(db: AsyncSession, lead: Lead) -> Employee | None:
+async def assign_employee(
+    db: AsyncSession, lead: Lead, prefer_online: bool = False
+) -> Employee | None:
     """Pick the employee for ``lead`` and record the assignment.
 
     Returns the chosen employee, or None when no active employee exists.
     Updates ``lead.assigned_employee_id`` / ``lead.status`` and inserts an
     Assignment row; the caller commits.
+
+    When ``prefer_online`` is set (used when a lead explicitly asks to talk to a
+    human now), online employees are preferred so someone can respond live; if
+    none are online it falls back to any active employee (they pick it up later).
     """
     result = await db.execute(
         select(Employee).where(Employee.is_active.is_(True), Employee.role == Role.EMPLOYEE)
@@ -36,6 +42,13 @@ async def assign_employee(db: AsyncSession, lead: Lead) -> Employee | None:
         employees = list(result.scalars().all())
     if not employees:
         return None
+
+    # Prefer online agents for live handovers, but only if at least one is
+    # online — otherwise keep the full active pool so the lead still gets an owner.
+    if prefer_online:
+        online = [e for e in employees if e.is_online]
+        if online:
+            employees = online
 
     # Current open (not closed) leads per employee, by tier.
     result = await db.execute(
