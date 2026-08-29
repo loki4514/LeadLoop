@@ -1,7 +1,15 @@
 import os
 import uuid
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    File,
+    HTTPException,
+    UploadFile,
+    status,
+)
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -27,6 +35,7 @@ ALLOWED_EXTENSIONS = {".pdf", ".docx", ".doc", ".xlsx", ".xls", ".txt", ".md", "
     dependencies=[Depends(get_current_employee)],
 )
 async def upload_document(
+    background: BackgroundTasks,
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
 ):
@@ -58,10 +67,14 @@ async def upload_document(
     await db.commit()
     await db.refresh(doc)
 
-    # Hand off to the Celery worker; ingestion runs out of the request path.
-    from app.tasks.ingestion import ingest_document as ingest_task
+    # Ingest after the response is sent. Previously a Celery task; the worker
+    # was dropped, so this runs in-process. Same non-blocking behaviour from the
+    # client's perspective, but no retries and an in-flight ingest is lost if the
+    # container restarts (the pipeline records failures on the Document row, so
+    # a lost job surfaces as a stuck 'pending' rather than silently vanishing).
+    from app.ingestion.pipeline import ingest_document as run_ingest
 
-    ingest_task.delay(doc.id)
+    background.add_task(run_ingest, doc.id)
 
     return doc
 
