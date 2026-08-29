@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import AppShell from "@/components/AppShell";
 import { formatINR, TierBadge, timeAgo } from "@/components/leadUi";
+import { TableSkeleton } from "@/components/Skeleton";
 import {
   getToken,
   listLeads,
@@ -34,6 +35,7 @@ export default function LeadsPage() {
     const token = getToken();
     if (!token) return;
     setError(null);
+    setLeads(null); // re-shimmer on filter change instead of showing stale rows
     try {
       setLeads(
         await listLeads(token, {
@@ -121,6 +123,7 @@ export default function LeadsPage() {
                 </tr>
               </thead>
               <tbody>
+                {leads === null && <TableSkeleton rows={6} cols={8} />}
                 {leads?.map((lead) => (
                   <tr
                     key={lead.id}
