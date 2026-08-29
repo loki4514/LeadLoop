@@ -1,0 +1,152 @@
+# Production compose — hardened for a secure demo/deploy.
+#
+# Differences from the dev docker-compose.yml:
+#   * No host-published Postgres/Redis/app ports — only Caddy is exposed (443/80).
+#   * Caddy terminates TLS (auto HTTPS) and reverse-proxies to the app services.
+#   * Requires real secrets from the environment (no leadagent/leadagent, no
+#     change-me JWT). ENVIRONMENT=production makes the backend refuse insecure
+#     config at startup.
+#   * Multiple Uvicorn workers via WEB_CONCURRENCY.
+#   * Frontend is built to call the API same-origin (/api) through Caddy.
+#
+# Usage:
+#   cp .env.prod.example .env.prod   # fill in strong secrets + keys
+#   docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
+#
+# For a real domain, set DOMAIN=yourdomain.com in .env.prod (Caddy gets a
+# Let's Encrypt cert automatically). Left unset it serves https://localhost with
+# a self-signed cert (accept the browser warning once).
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - backend
+      - frontend
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set a strong POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-leadagent}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    # No ports: — the DB is reachable only on the internal compose network.
+
+  redis:
+    image: redis:7
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    environment:
+      ENVIRONMENT: production
+      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-4}
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL with a strong password}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      JWT_SECRET: ${JWT_SECRET:?set a strong random JWT_SECRET}
+      CORS_ORIGINS: ${CORS_ORIGINS:-https://localhost}
+      FRONTEND_BASE_URL: ${FRONTEND_BASE_URL:-https://localhost}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      EMAIL_FROM: ${EMAIL_FROM:-LeadLoop <onboarding@resend.dev>}
+      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL}
+      EMBEDDING_DIM: ${EMBEDDING_DIM}
+      EMBEDDING_API_KEY: ${EMBEDDING_API_KEY}
+      LLM_PROVIDER: ${LLM_PROVIDER}
+      LLM_MODEL: ${LLM_MODEL}
+      LLM_API_KEY: ${LLM_API_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      UPLOAD_DIR: /data/uploads
+    volumes:
+      - uploads_data:/data/uploads
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health').status==200 else 1)\""]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # Same-origin: the browser calls /api, Caddy routes it to the backend.
+        NEXT_PUBLIC_API_BASE: ""
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/ >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    depends_on:
+      - backend
+
+  worker:
+    build: ./backend
+    restart: unless-stopped
+    command: ["celery", "-A", "app.core.celery_app.celery_app", "worker", "-B", "--loglevel=info", "--concurrency=2"]
+    environment:
+      ENVIRONMENT: production
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL with a strong password}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      JWT_SECRET: ${JWT_SECRET:?set a strong random JWT_SECRET}
+      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL}
+      EMBEDDING_DIM: ${EMBEDDING_DIM}
+      EMBEDDING_API_KEY: ${EMBEDDING_API_KEY}
+      LLM_PROVIDER: ${LLM_PROVIDER}
+      LLM_MODEL: ${LLM_MODEL}
+      LLM_API_KEY: ${LLM_API_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      EMAIL_FROM: ${EMAIL_FROM:-LeadLoop <onboarding@resend.dev>}
+      FRONTEND_BASE_URL: ${FRONTEND_BASE_URL:-https://localhost}
+      STALL_HOURS: ${STALL_HOURS:-48}
+      FOLLOWUP_CHECK_MINUTES: ${FOLLOWUP_CHECK_MINUTES:-60}
+      UPLOAD_DIR: /data/uploads
+    volumes:
+      - uploads_data:/data/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  redis_data:
+  uploads_data:
+  caddy_data:
+  caddy_config:
