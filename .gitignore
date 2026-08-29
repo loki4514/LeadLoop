@@ -1,5 +1,8 @@
-# Env
+# Env — never commit real secrets. *.example templates are tracked.
 .env
+.env.*
+!.env.example
+!.env.prod.example
 
 # Python
 __pycache__/

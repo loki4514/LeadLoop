@@ -1,10 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_employee, oauth2_scheme, require_admin
 from app.core.config import settings
+from app.core.ratelimit import limiter
 from app.core.email import reset_email_html, send_email
 from app.core.redis import get_redis
 from app.core.security import (
@@ -32,12 +33,16 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 @router.post("/login", response_model=Token)
+@limiter.limit("10/minute")
 async def login(
+    request: Request,
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: AsyncSession = Depends(get_db),
     redis: Redis = Depends(get_redis),
 ):
-    """Stateful login: verify credentials, open a server-side session, mint a JWT."""
+    """Stateful login: verify credentials, open a server-side session, mint a JWT.
+
+    Rate-limited per IP to blunt credential brute-force."""
     employee = await employee_crud.get_by_email(db, form_data.username)
     if employee is None or not verify_password(
         form_data.password, employee.hashed_password

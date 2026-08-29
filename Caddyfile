@@ -1,0 +1,26 @@
+# Caddy reverse proxy with automatic HTTPS.
+#
+# Localhost demo: `tls internal` issues a self-signed cert (browsers warn once;
+# accept it). For a real domain, set DOMAIN in .env and Caddy fetches a free
+# Let's Encrypt cert automatically — no other change needed.
+#
+# Routing: /api/* and /health go to the backend; everything else (the Next.js
+# app + widget) goes to the frontend. TLS terminates here; the app services are
+# not published to the host in the prod compose.
+
+{$DOMAIN:localhost} {
+	tls internal
+
+	# Backend API + health check
+	handle /api/* {
+		reverse_proxy backend:8000
+	}
+	handle /health {
+		reverse_proxy backend:8000
+	}
+
+	# Everything else -> Next.js frontend
+	handle {
+		reverse_proxy frontend:3000
+	}
+}

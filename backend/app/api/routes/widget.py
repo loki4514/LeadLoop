@@ -4,11 +4,12 @@ Customer chat is plain HTTP POST per turn, per the architecture spec. No auth:
 the conversation id acts as the session handle. Keep responses free of any
 internal data (scores, tiers, assignments are never returned here).
 """
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.service import GREETING, run_agent_turn
 from app.api.sse import message_stream
+from app.core.ratelimit import limiter
 from app.db.session import get_db
 from app.models.conversation import Conversation
 from app.models.lead import Lead
@@ -23,12 +24,16 @@ router = APIRouter(prefix="/widget", tags=["widget"])
 
 
 @router.post("/sessions", response_model=WidgetSessionRead)
+@limiter.limit("10/minute")
 async def create_session(
+    request: Request,
     body: WidgetSessionCreate,
     db: AsyncSession = Depends(get_db),
 ):
     """Start a widget chat: creates the lead (tagged with its ad source) and
-    its web conversation, and returns the opening greeting."""
+    its web conversation, and returns the opening greeting.
+
+    Rate-limited per IP: session creation makes unbounded Lead rows otherwise."""
     lead = Lead(ad_source=body.ad_source)
     db.add(lead)
     await db.flush()
@@ -44,12 +49,17 @@ async def create_session(
 
 
 @router.post("/messages", response_model=WidgetMessageResponse)
+@limiter.limit("20/minute")
 async def send_message(
+    request: Request,
     body: WidgetMessageRequest,
     db: AsyncSession = Depends(get_db),
 ):
     """One chat turn: persist the lead's message, run the qualifier agent, and
-    return its reply."""
+    return its reply.
+
+    Rate-limited per IP: this calls the paid LLM, so it's the main cost-abuse
+    surface."""
     reply = await run_agent_turn(db, body.conversation_id, body.message)
     return WidgetMessageResponse(reply=reply)
 

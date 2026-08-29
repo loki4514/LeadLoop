@@ -1,6 +1,9 @@
 from functools import lru_cache
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+INSECURE_JWT_DEFAULT = "change-me"
 
 
 class Settings(BaseSettings):
@@ -9,6 +12,9 @@ class Settings(BaseSettings):
     # App
     PROJECT_NAME: str = "Lead Agent API"
     API_V1_PREFIX: str = "/api/v1"
+    # "development" (default) keeps insecure defaults usable for local work.
+    # Set ENVIRONMENT=production to enforce secure config (see the validator).
+    ENVIRONMENT: str = "development"
 
     # CORS — comma-separated origins allowed to call the API from a browser.
     CORS_ORIGINS: str = "http://localhost:3000"
@@ -84,6 +90,24 @@ class Settings(BaseSettings):
         if url.startswith("postgresql://"):
             url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
         return url
+
+    @model_validator(mode="after")
+    def _enforce_production_security(self) -> "Settings":
+        """In production, refuse to start with insecure defaults. In development
+        these stay usable so local work is frictionless."""
+        if self.ENVIRONMENT.lower() != "production":
+            return self
+        problems = []
+        if self.JWT_SECRET in ("", INSECURE_JWT_DEFAULT):
+            problems.append("JWT_SECRET must be set to a strong random value")
+        if "leadagent:leadagent@" in self.DATABASE_URL:
+            problems.append("DATABASE_URL still uses the default leadagent password")
+        if problems:
+            raise ValueError(
+                "Insecure configuration for ENVIRONMENT=production: "
+                + "; ".join(problems)
+            )
+        return self
 
 
 @lru_cache
