@@ -89,11 +89,6 @@ class Settings(BaseSettings):
         url = self.DATABASE_URL
         if url.startswith("postgresql://"):
             url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
-        # Managed providers (Neon, Supabase) append libpq-style query params.
-        # psycopg2 understands them; asyncpg raises on the unexpected kwarg, and
-        # negotiates TLS on its own, so drop them from the async URL.
-        if "?" in url:
-            url = url.split("?", 1)[0]
         return url
 
     @model_validator(mode="after")
