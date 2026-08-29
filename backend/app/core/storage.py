@@ -29,9 +29,23 @@ def _client():
     import boto3
     from botocore.config import Config
 
+    if not settings.S3_ENDPOINT_URL or not settings.S3_BUCKET:
+        # Reached when one service has object storage configured and another
+        # doesn't — the API writes an r2:// URI the worker then can't resolve.
+        # boto3's own error for this is a bare "Invalid endpoint: ".
+        raise RuntimeError(
+            "Object storage is not configured on this service: set "
+            "S3_ENDPOINT_URL and S3_BUCKET (plus credentials) everywhere that "
+            "reads or writes uploads — the API and the worker both need them."
+        )
+
     return boto3.client(
         "s3",
-        endpoint_url=settings.S3_ENDPOINT_URL,
+        # boto3 appends the bucket and key, so a bucket suffix on the endpoint
+        # would double it up (.../leadloop/leadloop/uploads/...).
+        endpoint_url=settings.S3_ENDPOINT_URL.rstrip("/").removesuffix(
+            f"/{settings.S3_BUCKET}"
+        ),
         aws_access_key_id=settings.S3_ACCESS_KEY_ID,
         aws_secret_access_key=settings.S3_SECRET_ACCESS_KEY,
         region_name=settings.S3_REGION,
