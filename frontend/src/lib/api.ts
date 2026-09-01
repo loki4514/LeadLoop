@@ -236,6 +236,53 @@ export function getConversation(
 }
 
 // ---------------------------------------------------------------------------
+// Public demo chat (no auth — the try-it-out surface)
+// ---------------------------------------------------------------------------
+
+export interface DemoTurn {
+  role: "user" | "assistant";
+  content: string;
+}
+
+export interface DemoChatResponse {
+  answer: string;
+  /** False when nothing relevant was found and the answer is the refusal. */
+  grounded: boolean;
+}
+
+/**
+ * Ask the public demo a question. Answers come only from documents in the
+ * knowledge base; the response deliberately carries no sources, filenames or
+ * scores. The demo is stateless, so recent turns are passed back for context.
+ */
+export async function askDemo(
+  question: string,
+  history: DemoTurn[] = [],
+): Promise<DemoChatResponse> {
+  const res = await fetch(`${API_BASE}/api/v1/demo/chat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    // The API caps history at 10 turns; trim here so a long chat doesn't 422.
+    body: JSON.stringify({ question, history: history.slice(-10) }),
+  });
+  if (!res.ok) {
+    if (res.status === 429) {
+      throw new Error("Too many questions just now — give it a minute.");
+    }
+    const detail = await res.json().catch(() => null);
+    throw new Error(detail?.detail ?? `Request failed (${res.status})`);
+  }
+  return (await res.json()) as DemoChatResponse;
+}
+
+/** Starter questions for the demo's empty state. */
+export async function getDemoSuggestions(): Promise<string[]> {
+  const res = await fetch(`${API_BASE}/api/v1/demo/suggestions`);
+  if (!res.ok) return [];
+  return (await res.json()) as string[];
+}
+
+// ---------------------------------------------------------------------------
 // Employees
 // ---------------------------------------------------------------------------
 

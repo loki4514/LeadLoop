@@ -62,6 +62,9 @@ services:
       S3_PREFIX: ${S3_PREFIX:-uploads/}
     volumes:
       - uploads_data:/data/uploads
+      # Seed corpus for `python -m scripts.seed_knowledge_base`. Read-only: the
+      # script copies files into the uploads store rather than writing here.
+      - ./knowledge_base:/knowledge_base:ro
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health').status==200 else 1)\""]
       interval: 15s
@@ -127,6 +130,7 @@ services:
       S3_PREFIX: ${S3_PREFIX:-uploads/}
     volumes:
       - uploads_data:/data/uploads
+      - ./knowledge_base:/knowledge_base:ro
     depends_on:
       postgres:
         condition: service_healthy

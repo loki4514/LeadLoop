@@ -90,9 +90,18 @@ export default function LandingPage() {
             </Link>
             <Link
               href="/login"
-              className="rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:shadow-md active:scale-[0.98]"
+              className="hidden rounded-lg px-3.5 py-2 text-sm font-medium text-neutral-600 transition hover:bg-neutral-100 sm:inline-block dark:text-neutral-300 dark:hover:bg-neutral-800"
             >
               Sign in
+            </Link>
+            {/* The header CTA follows the hero: the no-login assistant is what
+                a visitor can act on right now, so it keeps the solid button.
+                Labelled by what it answers, not by the fact that it's AI. */}
+            <Link
+              href="/demo"
+              className="rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:shadow-md active:scale-[0.98]"
+            >
+              Property Q&amp;A
             </Link>
           </div>
         </div>
@@ -121,20 +130,56 @@ export default function LandingPage() {
             prospect — so a human closes, and no high-value lead ever goes cold.
             Built for real-estate teams, works for any high-ticket sales.
           </p>
-          <div className="mt-8 flex items-center justify-center gap-3">
+          {/* A first-time visitor has no account, so the thing they can
+              actually try — the no-login assistant — takes the primary slot;
+              sign-in drops to a quiet link for the team. Both labels are short
+              verb phrases of similar length, and whitespace-nowrap keeps each
+              on one line so the pair stays balanced. */}
+          <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
             <Link
-              href="/login"
-              className="rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 px-5 py-2.5 text-sm font-medium text-white shadow-sm transition hover:shadow-md active:scale-[0.98]"
+              href="/demo"
+              className="inline-flex w-full items-center justify-center gap-2.5 whitespace-nowrap rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 px-7 py-4 text-base font-semibold text-white shadow-lg shadow-indigo-500/30 ring-1 ring-inset ring-white/20 transition hover:shadow-xl hover:shadow-indigo-500/40 active:scale-[0.98] sm:w-auto"
             >
-              Sign in to dashboard
+              <svg
+                viewBox="0 0 20 20"
+                fill="currentColor"
+                className="h-5 w-5"
+                aria-hidden
+              >
+                <path d="M10 2c-4.42 0-8 2.99-8 6.67 0 1.9.96 3.6 2.5 4.82V17a.5.5 0 0 0 .76.43l2.72-1.63c.66.13 1.33.2 2.02.2 4.42 0 8-2.99 8-6.67C18 4.99 14.42 2 10 2Z" />
+              </svg>
+              Ask about buying property
             </Link>
+            {/* Secondary, but not a flat outline — a solid dark surface with
+                its own icon so it reads as a real button beside the gradient. */}
             <Link
               href="/widget"
-              className="rounded-lg border border-neutral-300 px-5 py-2.5 text-sm font-medium text-neutral-700 transition hover:bg-neutral-100 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-800"
+              className="inline-flex w-full items-center justify-center gap-2.5 whitespace-nowrap rounded-xl bg-neutral-900 px-7 py-4 text-base font-semibold text-white shadow-lg shadow-neutral-900/20 ring-1 ring-inset ring-white/10 transition hover:bg-neutral-800 hover:shadow-xl active:scale-[0.98] sm:w-auto dark:bg-white dark:text-neutral-900 dark:shadow-black/30 dark:ring-black/5 dark:hover:bg-neutral-200"
             >
-              Try the live demo →
+              <svg
+                viewBox="0 0 20 20"
+                fill="currentColor"
+                className="h-5 w-5"
+                aria-hidden
+              >
+                <path d="M10 1.5 12.7 7l6.05.88-4.38 4.27L15.4 18 10 15.15 4.6 18l1.03-5.85L1.25 7.88 7.3 7 10 1.5Z" />
+              </svg>
+              Watch a lead get qualified
             </Link>
           </div>
+          <p className="mt-4 text-sm text-neutral-500">
+            Home loans, stamp duty, registration, RERA — answered from a real
+            Indian real-estate knowledge base. No sign-up needed.
+          </p>
+          <p className="mt-6 text-sm text-neutral-500">
+            Already a customer?{" "}
+            <Link
+              href="/login"
+              className="font-medium text-indigo-600 underline-offset-4 hover:underline dark:text-indigo-400"
+            >
+              Sign in to your dashboard
+            </Link>
+          </p>
         </div>
       </section>
 
@@ -223,21 +268,38 @@ export default function LandingPage() {
           Ready to see it work?
         </h2>
         <p className="mx-auto mt-3 max-w-lg text-neutral-500 dark:text-neutral-400">
-          Sign in to the team dashboard, or try the live chat widget to
-          experience the qualifier as a lead would.
+          Ask a real question about buying property in India — no sign-up
+          needed. Or step through the chat widget as an inbound lead and watch
+          the qualifier work.
         </p>
-        <div className="mt-8 flex items-center justify-center gap-3">
+        <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
           <Link
-            href="/login"
-            className="rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 px-5 py-2.5 text-sm font-medium text-white shadow-sm transition hover:shadow-md active:scale-[0.98]"
+            href="/demo"
+            className="inline-flex w-full items-center justify-center gap-2.5 whitespace-nowrap rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 px-7 py-4 text-base font-semibold text-white shadow-lg shadow-indigo-500/30 ring-1 ring-inset ring-white/20 transition hover:shadow-xl hover:shadow-indigo-500/40 active:scale-[0.98] sm:w-auto"
           >
-            Sign in
+            <svg
+              viewBox="0 0 20 20"
+              fill="currentColor"
+              className="h-5 w-5"
+              aria-hidden
+            >
+              <path d="M10 2c-4.42 0-8 2.99-8 6.67 0 1.9.96 3.6 2.5 4.82V17a.5.5 0 0 0 .76.43l2.72-1.63c.66.13 1.33.2 2.02.2 4.42 0 8-2.99 8-6.67C18 4.99 14.42 2 10 2Z" />
+            </svg>
+            Ask about buying property
           </Link>
           <Link
             href="/widget"
-            className="rounded-lg border border-neutral-300 px-5 py-2.5 text-sm font-medium text-neutral-700 transition hover:bg-neutral-100 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-800"
+            className="inline-flex w-full items-center justify-center gap-2.5 whitespace-nowrap rounded-xl bg-neutral-900 px-7 py-4 text-base font-semibold text-white shadow-lg shadow-neutral-900/20 ring-1 ring-inset ring-white/10 transition hover:bg-neutral-800 hover:shadow-xl active:scale-[0.98] sm:w-auto dark:bg-white dark:text-neutral-900 dark:shadow-black/30 dark:ring-black/5 dark:hover:bg-neutral-200"
           >
-            Try the live demo →
+            <svg
+              viewBox="0 0 20 20"
+              fill="currentColor"
+              className="h-5 w-5"
+              aria-hidden
+            >
+              <path d="M10 1.5 12.7 7l6.05.88-4.38 4.27L15.4 18 10 15.15 4.6 18l1.03-5.85L1.25 7.88 7.3 7 10 1.5Z" />
+            </svg>
+            Watch a lead get qualified
           </Link>
         </div>
       </section>

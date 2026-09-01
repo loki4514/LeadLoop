@@ -53,6 +53,10 @@ class Settings(BaseSettings):
     # Retrieval knobs for the RAG chat.
     CHAT_TOP_K: int = 5  # chunks retrieved per question
     CHAT_MIN_SCORE: float = 0.3  # drop chunks below this cosine similarity
+    # The public demo holds a higher bar than the internal chat: it is
+    # unauthenticated, so a weak match should become a refusal rather than an
+    # answer stretched from barely-relevant context.
+    DEMO_MIN_SCORE: float = 0.45
 
     # Follow-up automation — a qualified/assigned lead with no activity for
     # STALL_HOURS gets an LLM-drafted follow-up email queued for human approval.
